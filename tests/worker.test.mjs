@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { webcrypto } from 'node:crypto';
+import worker from '../backend/worker.js';
+if(!globalThis.crypto)globalThis.crypto=webcrypto;
+// Test D1's compare-and-swap contract with an in-memory adapter.
+function database(){let row=null;return{prepare(sql){return{bind(...args){return{async first(){return row?{...row}:null;},async run(){if(sql.startsWith('INSERT')){if(row)return{meta:{changes:0}};row={id:args[0],token_hash:args[1],revision:1,iv:args[2],ciphertext:args[3]};return{meta:{changes:1}};}if(row&&row.id===args[3]&&row.token_hash===args[4]&&row.revision===args[5]){row={...row,iv:args[0],ciphertext:args[1],revision:row.revision+1};return{meta:{changes:1}};}return{meta:{changes:0}};}};}};}};}
+const id='a'.repeat(64),token='b'.repeat(64),origin='https://ovovo-gh.github.io';
+const payload=revision=>({revision,iv:'abcdefghijklmnop',ciphertext:'ABCDEFGHIJKLMNOPQRSTUVWX'});
+function request(method='GET',body,auth=token,from=origin){return new Request(`https://sync.example/v1/vault/${id}`,{method,headers:{Origin:from,Authorization:'Bearer '+auth,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});}
+test('创建、读取、版本冲突、鉴权、跨域及非法输入',async()=>{const env={DB:database()};assert.equal((await worker.fetch(request(),env)).status,404);assert.equal((await worker.fetch(request('PUT',payload(0)),env)).status,200);const response=await worker.fetch(request(),env);const body=await response.json();assert.equal(body.revision,1);assert.equal(body.token_hash,undefined);assert.equal(response.headers.get('Access-Control-Allow-Origin'),origin);assert.equal((await worker.fetch(request('PUT',payload(0)),env)).status,409);assert.equal((await worker.fetch(request('PUT',payload(1)),env)).status,200);assert.equal((await worker.fetch(request('GET',undefined,'c'.repeat(64)),env)).status,401);assert.equal((await worker.fetch(request('GET',undefined,token,'https://evil.test'),env)).status,403);assert.equal((await worker.fetch(request('PUT',{...payload(2),iv:'bad'}),env)).status,400);assert.equal((await worker.fetch(request('DELETE'),env)).status,405);});
+test('两台设备同时写入只接受一个版本，旧数据不能静默覆盖',async()=>{const env={DB:database()};await worker.fetch(request('PUT',payload(0)),env);const responses=await Promise.all([worker.fetch(request('PUT',payload(1)),env),worker.fetch(request('PUT',payload(1)),env)]);assert.deepEqual(responses.map(x=>x.status).sort(),[200,409]);assert.equal((await(await worker.fetch(request(),env)).json()).revision,2);});
+test('限制请求大小，包括缺少 Content-Length 的请求',async()=>{const env={DB:database()};const res=await worker.fetch(request('PUT',{...payload(0),ciphertext:'A'.repeat(900001)}),env);assert.equal(res.status,413);});

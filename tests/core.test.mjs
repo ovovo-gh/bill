@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { webcrypto } from 'node:crypto';
+import { amountToMinor, totals, validateData, newData } from '../public/model.js';
+import { encrypt, decrypt, generateKey, identity } from '../public/crypto.js';
+if(!globalThis.crypto)globalThis.crypto=webcrypto;
+const account=(currency,amount,kind='asset',archived=false)=>({id:crypto.randomUUID(),name:'测试',currency,amount,kind,archived,category:'现金',note:'',updatedAt:new Date().toISOString()});
+test('金额转换精确到分，拒绝负数、溢出和错误小数位',()=>{assert.equal(amountToMinor('0.29','CNY'),29);assert.equal(amountToMinor('100.1','HKD'),10010);assert.equal(amountToMinor('1234','JPY'),1234);for(const [n,c] of [['1.1','JPY'],['-2','CNY'],['Infinity','EUR'],['1.234','EUR'],['1e3','CNY'],['9999999999999999','CNY']])assert.throws(()=>amountToMinor(n,c));});
+test('多币种资产、信用卡负债及归档计算',()=>{const result=totals([account('CNY',100000),account('HKD',10000),account('JPY',10000),account('EUR',2000),account('CNY',20000,'debt'),account('CNY',900000,'asset',true)],{HKD:{rate:.9},JPY:{rate:.05},EUR:{rate:8}});assert.deepEqual(result,{assets:1750,debt:200,net:1550,missing:[]});});
+test('缺少汇率时显式报告，零余额不阻止合计',()=>{assert.deepEqual(totals([account('HKD',100),account('EUR',0)],{}).missing,['HKD']);});
+test('导入数据校验拒绝重复账户和非法负债',()=>{const d=newData();const a=account('CNY',100);d.accounts=[a];assert.equal(validateData(d),d);d.accounts.push(a);assert.throws(()=>validateData(d));d.accounts=[{...a,amount:-100}];assert.throws(()=>validateData(d));});
+test('加密可还原，错误密钥和被修改的密文不能解密',async()=>{const key=generateKey(),d={text:'账户 ¥1234.56'},cipher=await encrypt(d,key);assert.ok(!cipher.ciphertext.includes('账户'));assert.deepEqual(await decrypt(cipher,key),d);await assert.rejects(()=>decrypt(cipher,generateKey()));await assert.rejects(()=>decrypt({...cipher,ciphertext:'A'+cipher.ciphertext.slice(1,-1)+'B'},key));assert.notEqual((await encrypt(d,key)).iv,cipher.iv);const a=await identity(key);assert.notEqual(a.id,a.token);assert.notEqual(a.token,key);assert.deepEqual(await identity(key),a);});
