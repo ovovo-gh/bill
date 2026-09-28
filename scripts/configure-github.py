@@ -9,7 +9,7 @@ token = getpass('粘贴 GitHub 令牌（输入时不会显示），然后回车�
 if not token or any(c.isspace() for c in token):
     raise SystemExit('未保存：令牌为空或含空白字符。')
 credential = 'protocol=https\nhost=github.com\npath=ovovo-gh/bill.git\nusername=ovovo-gh\npassword=' + token + '\n\n'
-subprocess.run(['git', '-c', 'credential.helper=', '-c', 'credential.helper=osxkeychain', 'credential.approve'], input=credential, text=True, check=True, cwd=root)
+subprocess.run(['git', '-c', 'credential.helper=', '-c', 'credential.helper=osxkeychain', '-c', 'credential.useHttpPath=true', 'credential', 'approve'], input=credential, text=True, check=True, cwd=root)
 subprocess.run(['git', 'config', '--local', 'credential.useHttpPath', 'true'], check=True, cwd=root)
 subprocess.run(['git', 'config', '--local', 'credential.https://github.com.username', 'ovovo-gh'], check=True, cwd=root)
 print('已保存。回到聊天告诉我“已配置”，我会继续上传并检查发布结果。')
