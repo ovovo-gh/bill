@@ -1,9 +1,0 @@
-{
-  "name": "yuyou-bill-sync",
-  "main": "worker.js",
-  "compatibility_date": "2026-09-28",
-  "workers_dev": true,
-  "vars": { "ALLOWED_ORIGINS": "https://ovovo-gh.github.io,http://localhost:4173,http://127.0.0.1:4173" },
-  "d1_databases": [{ "binding": "DB", "database_name": "yuyou-bill", "database_id": "REPLACE_WITH_CREATED_DATABASE_ID" }],
-  "observability": { "enabled": false }
-}
