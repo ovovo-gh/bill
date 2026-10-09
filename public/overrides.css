@@ -1,0 +1,111 @@
+/* Detail polish for sorting, archived editing, and the account workspace. */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 64px;
+  border-bottom: 1px solid var(--line);
+}
+
+.filters { margin: 0; padding: 12px 0; }
+
+.sort-control {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.sort-control select {
+  appearance: none;
+  border: 1px solid #d8e3dc;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  padding: 9px 31px 9px 11px;
+  font-size: 13px;
+  background-image: linear-gradient(45deg, transparent 50%, #739086 50%), linear-gradient(135deg, #739086 50%, transparent 50%);
+  background-position: calc(100% - 15px) 14px, calc(100% - 11px) 14px;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+
+.sort-control select:hover { border-color: #9ab9aa; }
+
+.account-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(145deg, #fff 0%, #fff 72%, #f4f8f5 100%);
+  box-shadow: 0 4px 14px rgba(39, 72, 57, .04);
+}
+
+.account-card::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto auto;
+  width: 4px;
+  height: 72px;
+  background: #cfe2d5;
+  border-radius: 0 12px 0 12px;
+  opacity: .9;
+}
+
+.account-card.is-archived {
+  background: linear-gradient(145deg, #fff 0%, #fff 72%, #f7f7f4 100%);
+  border-style: dashed;
+}
+
+.account-card.is-archived::after { background: #c4c9c2; }
+.account-card.is-archived .card-balance,
+.account-card.is-archived .card-name { color: #66736b; }
+
+.card-converted {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+}
+
+.card-converted::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #8bb89a;
+  margin-right: 7px;
+  flex: 0 0 auto;
+}
+
+.account-card.is-archived .card-converted::before { background: #b6bbb6; }
+
+.card-edit {
+  position: relative;
+  z-index: 1;
+  border-radius: 7px;
+}
+
+.card-edit:hover { background: #edf4ef; color: #21634f; }
+.card-bottom button { border-radius: 6px; }
+.card-bottom button:hover { background: #eef5f0; color: #21634f; }
+.empty { box-shadow: 0 5px 18px rgba(39, 72, 57, .035); }
+
+@media (max-width: 600px) {
+  .filter-bar { min-height: 58px; gap: 9px; }
+  .filters {
+    overflow: auto;
+    flex-wrap: nowrap;
+    max-width: calc(100% - 142px);
+    scrollbar-width: none;
+  }
+  .filters::-webkit-scrollbar { display: none; }
+  .sort-control { gap: 5px; font-size: 12px; }
+  .sort-control select {
+    padding: 8px 25px 8px 8px;
+    font-size: 12px;
+    background-position: calc(100% - 12px) 13px, calc(100% - 8px) 13px;
+  }
+  .account-card::after { height: 55px; }
+  .card-converted::before { margin-right: 6px; }
+}

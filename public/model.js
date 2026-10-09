@@ -10,6 +10,22 @@ export function amountToMinor(value, currency) {
   return n;
 }
 export const major = (minor, currency) => minor / (currency === 'JPY' ? 1 : 100);
+export function accountComparableAmount(account, rates = {}) {
+  const native = major(account.amount, account.currency);
+  const rate = account.currency === 'CNY' ? 1 : rates[account.currency]?.rate;
+  const converted = rate > 0 ? native * rate : native;
+  return account.kind === 'debt' ? -converted : converted;
+}
+export function sortAccountsByAmount(accounts, rates = {}, order = 'desc') {
+  const direction = order === 'asc' ? 1 : -1;
+  return accounts
+    .map((account, index) => ({ account, index }))
+    .sort((a, b) => {
+      const difference = accountComparableAmount(a.account, rates) - accountComparableAmount(b.account, rates);
+      return difference === 0 ? a.index - b.index : difference * direction;
+    })
+    .map(({ account }) => account);
+}
 export function totals(accounts, rates) {
   let assets = 0, debt = 0; const missing = new Set();
   for (const a of accounts.filter(a => !a.archived)) {
