@@ -55,7 +55,7 @@ function renderMonthlySummary() {
   $('#monthly-income').textContent = value(result.income);
   $('#monthly-balance').textContent = value(result.balance);
   $('#monthly-count').textContent = count ? `${count} 笔记录` : '还没有收支记录';
-  $('#monthly-note').textContent = blocked ? `缺少 ${result.missing.join('、')} 汇率，外币变动暂不计入月度合计。` : '根据账户修改历史推算：余额增加算收入，余额减少算开销。';
+  $('#monthly-note').textContent = blocked ? `缺少 ${result.missing.join('、')} 汇率，外币变动暂不计入月度合计。` : '根据账户修改历史推算，包含归档账户变化；删除归档资产计入开销。';
 }
 
 function render() {
@@ -94,7 +94,7 @@ async function commit(next) {
   busy = true;
   try { validateData(next); storageVersion = saveLocal(next, storageVersion); data = next; render(); } finally { busy = false; }
 }
-function historyEntry(account, action, before, note = '') { return { id: crypto.randomUUID(), accountId: account.id, name: account.name, kind: account.kind, currency: account.currency, before, after: account.amount, action, note, at: new Date().toISOString() }; }
+function historyEntry(account, action, before, note = '') { return { id: crypto.randomUUID(), accountId: account.id, name: account.name, kind: account.kind, archived: account.archived, currency: account.currency, before, after: account.amount, action, note, at: new Date().toISOString() }; }
 
 function openAccount(id) {
   if (!ready) { toast('请刷新页面，等待账本加载完成'); return; }

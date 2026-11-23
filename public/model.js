@@ -42,10 +42,20 @@ export function monthlyHistoryTotals(history, accounts, rates, month) {
   for (const entry of history || []) {
     const at = new Date(entry.at);
     const entryMonth = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}`;
-    if (entry.action !== '修改' || entry.before === null || entryMonth !== month) continue;
+    if (entryMonth !== month) continue;
+    const kind = entry.kind || accountKinds.get(entry.accountId) || 'asset';
+    if (entry.action === '删除') {
+      if (!entry.after) continue;
+      const rate = entry.currency === 'CNY' ? 1 : rates[entry.currency]?.rate;
+      changes += 1;
+      if (!(rate > 0)) { missing.add(entry.currency); continue; }
+      const cny = Math.round(major(entry.after, entry.currency) * rate * 100);
+      if (kind === 'debt') income += cny; else expense += cny;
+      continue;
+    }
+    if (entry.action !== '修改' || entry.before === null) continue;
     const delta = entry.after - entry.before;
     if (!delta) continue;
-    const kind = entry.kind || accountKinds.get(entry.accountId) || 'asset';
     if (kind === 'debt' && delta < 0) continue;
     changes += 1;
     const rate = entry.currency === 'CNY' ? 1 : rates[entry.currency]?.rate;
@@ -63,7 +73,7 @@ export function validateData(data) {
     if (typeof a.id !== 'string' || ids.has(a.id) || typeof a.name !== 'string' || !a.name.trim() || a.name.length > 40 || typeof a.category !== 'string' || a.category.length > 30 || typeof a.note !== 'string' || a.note.length > 200 || !Object.hasOwn(CURRENCIES, a.currency) || !['asset','debt'].includes(a.kind) || !Number.isSafeInteger(a.amount) || a.amount < 0 || a.amount > 1e13 || typeof a.archived !== 'boolean' || !Number.isFinite(Date.parse(a.updatedAt))) throw new Error('账户数据无效');
     ids.add(a.id);
   }
-  for (const h of data.history) if (typeof h.id !== 'string' || typeof h.name !== 'string' || typeof h.action !== 'string' || (h.kind !== undefined && !['asset', 'debt'].includes(h.kind)) || !Object.hasOwn(CURRENCIES,h.currency) || !Number.isSafeInteger(h.after) || h.after < 0 || !(h.before === null || Number.isSafeInteger(h.before)) || !Number.isFinite(Date.parse(h.at)) || typeof h.note !== 'string') throw new Error('历史数据无效');
+  for (const h of data.history) if (typeof h.id !== 'string' || typeof h.name !== 'string' || typeof h.action !== 'string' || (h.kind !== undefined && !['asset', 'debt'].includes(h.kind)) || (h.archived !== undefined && typeof h.archived !== 'boolean') || !Object.hasOwn(CURRENCIES,h.currency) || !Number.isSafeInteger(h.after) || h.after < 0 || !(h.before === null || Number.isSafeInteger(h.before)) || !Number.isFinite(Date.parse(h.at)) || typeof h.note !== 'string') throw new Error('历史数据无效');
   const datePattern = /^\d{4}-\d{2}-\d{2}$/;
   for (const t of data.transactions) if (typeof t.id !== 'string' || !['income', 'expense'].includes(t.type) || !Object.hasOwn(CURRENCIES, t.currency) || !Number.isSafeInteger(t.amount) || t.amount < 0 || t.amount > 1e13 || typeof t.category !== 'string' || !t.category.trim() || t.category.length > 30 || typeof t.note !== 'string' || t.note.length > 200 || !datePattern.test(t.date) || !Number.isFinite(Date.parse(`${t.date}T00:00:00`)) || !Number.isFinite(Date.parse(t.createdAt))) throw new Error('收支记录无效');
   return data;
