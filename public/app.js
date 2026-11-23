@@ -1,4 +1,4 @@
-import { CURRENCIES, CATEGORIES, TRANSACTION_CATEGORIES, amountToMinor, major, totals, monthlyTotals, newData, validateData, sortAccountsByAmount } from './model.js';
+import { CURRENCIES, CATEGORIES, amountToMinor, major, totals, monthlyHistoryTotals, newData, validateData, sortAccountsByAmount } from './model.js';
 import { loadLocal, saveLocal } from './storage.js';
 import { icon, accountIcon } from './icons.js';
 
@@ -9,10 +9,9 @@ const stamp = at => new Date(at).toLocaleString('zh-CN', { month: '2-digit', day
 const localDate = (date = new Date()) => { const offset = date.getTimezoneOffset(); return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10); };
 const currentMonth = () => localDate().slice(0, 7);
 const monthLabel = month => new Date(`${month}-01T00:00:00`).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' });
-const transactionDateLabel = date => new Date(`${date}T00:00:00`).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
 
 let data = newData(), rates = {}, busy = false, ready = false, hidden = false;
-let view = 'accounts', category = '全部', sortOrder = 'desc', historyLimit = 40, transactionLimit = 40, storageVersion = 0, summaryMonth = currentMonth();
+let view = 'accounts', category = '全部', sortOrder = 'desc', historyLimit = 40, storageVersion = 0, summaryMonth = currentMonth();
 let toastTimer;
 
 function toast(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 5000); }
@@ -42,28 +41,21 @@ function card(account) {
   return `<article class="account-card${account.archived ? ' is-archived' : ''}"><div class="card-top"><span class="account-icon ${['blue', 'green', 'orange', 'purple', 'rose'].includes(account.color) ? account.color : 'blue'}">${icon(accountIcon(account))}</span><div class="card-heading"><h3 class="card-name">${esc(account.name)}</h3><div class="card-category">${esc(account.category)} · ${account.currency}${account.archived ? ' · 已归档' : ''}</div></div><button class="card-edit" data-edit="${esc(account.id)}" aria-label="${account.archived ? '编辑已归档账户' : '修改' + esc(account.name)}">${icon('edit')}</button></div><div class="card-balance ${account.kind === 'debt' ? 'debt' : ''}">${account.kind === 'debt' ? '− ' : ''}${display(value, account.currency)}</div><div class="card-converted">${equivalent}</div>${account.note ? `<p class="card-note">${esc(account.note)}</p>` : ''}<div class="card-bottom"><span>${esc(stamp(account.updatedAt))} 更新</span>${actions}</div></article>`;
 }
 
-function transactionRow(transaction) {
-  const native = major(transaction.amount, transaction.currency);
-  const fx = transaction.currency === 'CNY' ? 1 : rates[transaction.currency]?.rate;
-  const equivalent = transaction.currency === 'CNY' ? '' : fx ? `≈ ${display(native * fx)}` : '待汇率';
-  return `<article class="transaction-row ${transaction.type}"><div class="transaction-main"><span class="transaction-mark">${transaction.type === 'income' ? '＋' : '−'}</span><div><h3>${esc(transaction.category)} <span class="transaction-type">${transaction.type === 'income' ? '收入' : '支出'}</span></h3><p>${esc(transactionDateLabel(transaction.date))}${transaction.note ? ` · ${esc(transaction.note)}` : ''}</p></div></div><div class="transaction-amount"><strong>${transaction.type === 'income' ? '+' : '−'}${display(native, transaction.currency)}</strong><small>${equivalent || esc(CURRENCIES[transaction.currency])}</small></div><div class="transaction-actions"><button data-edit-transaction="${esc(transaction.id)}">编辑</button><button class="danger-button" data-delete-transaction="${esc(transaction.id)}">删除</button></div></article>`;
-}
-
 function renderMonthlySummary() {
   const summary = $('#monthly-summary');
   summary.hidden = view !== 'accounts';
   if (view !== 'accounts') return;
-  const result = monthlyTotals(data.transactions, rates, summaryMonth);
+  const result = monthlyHistoryTotals(data.history, data.accounts, rates, summaryMonth);
   const blocked = result.missing.length > 0;
   const value = amount => blocked ? '待汇率' : display(amount);
-  const count = data.transactions.filter(transaction => transaction.date.startsWith(summaryMonth)).length;
+  const count = result.changes;
   $('#summary-month').value = summaryMonth;
   $('#summary-month-label').textContent = monthLabel(summaryMonth);
   $('#monthly-expense').textContent = value(result.expense);
   $('#monthly-income').textContent = value(result.income);
   $('#monthly-balance').textContent = value(result.balance);
   $('#monthly-count').textContent = count ? `${count} 笔记录` : '还没有收支记录';
-  $('#monthly-note').textContent = blocked ? `缺少 ${result.missing.join('、')} 汇率，外币记录暂不计入月度合计。` : '按记录中的币种折合人民币统计。';
+  $('#monthly-note').textContent = blocked ? `缺少 ${result.missing.join('、')} 汇率，外币变动暂不计入月度合计。` : '根据账户修改历史推算：余额增加算收入，余额减少算开销。';
 }
 
 function render() {
@@ -72,11 +64,9 @@ function render() {
   $('#assets-value').textContent = sum.missing.length ? '暂无法合计' : display(sum.assets);
   $('#debt-value').textContent = sum.missing.length ? '暂无法合计' : display(sum.debt);
   $('#account-count').textContent = data.accounts.filter(account => !account.archived).length;
-  $('#transaction-count').textContent = data.transactions.length;
   $('#rate-notice').hidden = !sum.missing.length;
   $('#rate-notice').textContent = `尚未取得 ${sum.missing.join('、')} 汇率，资产合计暂不显示，避免漏算。请点击“更新汇率”。`;
   $('#categories').innerHTML = [...new Set([...CATEGORIES, ...data.accounts.map(account => account.category)])].map(value => `<option value="${esc(value)}"></option>`).join('');
-  $('#transaction-categories').innerHTML = [...new Set([...TRANSACTION_CATEGORIES, ...data.transactions.map(transaction => transaction.category)])].map(value => `<option value="${esc(value)}"></option>`).join('');
   document.querySelectorAll('[data-view]').forEach(element => { element.classList.toggle('active', element.dataset.view === view); element.setAttribute('aria-current', element.dataset.view === view ? 'page' : 'false'); });
   const accountView = view === 'accounts' || view === 'archived';
   const cats = ['全部', ...new Set(data.accounts.filter(account => account.archived === (view === 'archived')).map(account => account.category))];
@@ -91,9 +81,6 @@ function render() {
   if (view === 'history') {
     const rows = data.history.filter(history => (history.name + ' ' + history.note).toLowerCase().includes(search)).slice().reverse();
     $('#content').innerHTML = rows.length ? `<div class="history-list">${rows.slice(0, historyLimit).map(history => `<article class="history-row"><div><h3>${esc(history.name)} <span class="card-category">${esc(history.action)}</span></h3><p>${esc(stamp(history.at))}${history.note ? ' · ' + esc(history.note) : ''}</p></div><div class="history-money">${history.before === null ? '—' : display(major(history.before, history.currency), history.currency)} → ${display(major(history.after, history.currency), history.currency)}<small>${esc(CURRENCIES[history.currency])}</small></div></article>`).join('')}</div>${rows.length > historyLimit ? '<button id="load-more" class="secondary load-more">显示更多历史</button>' : ''}` : empty('还没有修改记录', '新增账户、修改余额和归档操作会记录在这里。');
-  } else if (view === 'transactions') {
-    const rows = data.transactions.filter(transaction => (transaction.category + ' ' + transaction.note + ' ' + transaction.date).toLowerCase().includes(search)).slice().sort((a, b) => (b.date + b.createdAt).localeCompare(a.date + a.createdAt));
-    $('#content').innerHTML = rows.length ? `<div class="transactions-list">${rows.slice(0, transactionLimit).map(transactionRow).join('')}</div>${rows.length > transactionLimit ? '<button id="load-more-transactions" class="secondary load-more">显示更多记录</button>' : ''}` : empty('还没有收支记录', '点击“记一笔”，记录收入或支出。', false);
   } else {
     const accounts = sortAccountsByAmount(data.accounts.filter(account => account.archived === (view === 'archived') && (category === '全部' || account.category === category) && (account.name + ' ' + account.note).toLowerCase().includes(search)), rates, sortOrder);
     $('#content').innerHTML = accounts.length ? `<div class="cards">${accounts.map(card).join('')}${view === 'accounts' ? '<button class="add-card" data-add><span class="plus-circle">＋</span>添加一个账户</button>' : ''}</div>` : empty(search ? '没有找到匹配账户' : view === 'archived' ? '暂无归档账户' : '从第一个账户开始', search ? '试试其他名称或备注。' : view === 'archived' ? '归档账户会保留历史，也可以编辑或永久删除。' : '添加微信、银行卡或外币零钱，随时知道钱在哪里。', !search && view === 'accounts');
@@ -107,7 +94,7 @@ async function commit(next) {
   busy = true;
   try { validateData(next); storageVersion = saveLocal(next, storageVersion); data = next; render(); } finally { busy = false; }
 }
-function historyEntry(account, action, before, note = '') { return { id: crypto.randomUUID(), accountId: account.id, name: account.name, currency: account.currency, before, after: account.amount, action, note, at: new Date().toISOString() }; }
+function historyEntry(account, action, before, note = '') { return { id: crypto.randomUUID(), accountId: account.id, name: account.name, kind: account.kind, currency: account.currency, before, after: account.amount, action, note, at: new Date().toISOString() }; }
 
 function openAccount(id) {
   if (!ready) { toast('请刷新页面，等待账本加载完成'); return; }
@@ -148,42 +135,6 @@ async function deleteArchived(id) {
   const account = data.accounts.find(item => item.id === id); if (!account?.archived) return;
   if (!await confirmAction('永久删除归档账户', `永久删除“${account.name}”？账户余额和卡片会被移除，但修改历史仍会保留。`, '永久删除')) return;
   try { const next = structuredClone(data); next.accounts = next.accounts.filter(item => item.id !== id); next.history.push(historyEntry(account, '删除', account.amount, '归档账户已永久删除')); await commit(next); toast('归档账户已删除'); } catch (error) { toast(error.message); }
-}
-
-function openTransaction(id) {
-  if (!ready) { toast('请刷新页面，等待账本加载完成'); return; }
-  const form = $('#transaction-form'); form.reset(); form.querySelector('.form-error').textContent = '';
-  const transaction = data.transactions.find(item => item.id === id);
-  form.elements.id.value = transaction?.id || '';
-  form.elements.type.value = transaction?.type || 'expense';
-  form.elements.amount.value = transaction ? major(transaction.amount, transaction.currency) : '';
-  form.elements.currency.value = transaction?.currency || 'CNY';
-  form.elements.date.value = transaction?.date || localDate();
-  form.elements.category.value = transaction?.category || '其他';
-  form.elements.note.value = transaction?.note || '';
-  $('#transaction-title').textContent = transaction ? '编辑收支记录' : '记一笔';
-  $('#transaction-dialog').showModal();
-}
-
-$('#transaction-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const form = event.currentTarget, button = form.querySelector('[type=submit]'); button.disabled = true;
-  try {
-    const old = data.transactions.find(transaction => transaction.id === form.elements.id.value);
-    const date = form.elements.date.value;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('请选择有效日期');
-    const transaction = { id: old?.id || crypto.randomUUID(), type: form.elements.type.value, amount: amountToMinor(form.elements.amount.value, form.elements.currency.value), currency: form.elements.currency.value, date, category: form.elements.category.value.trim(), note: form.elements.note.value.trim(), createdAt: old?.createdAt || new Date().toISOString() };
-    if (!transaction.category) throw new Error('请填写收支分类');
-    const next = structuredClone(data);
-    if (old) next.transactions[next.transactions.findIndex(item => item.id === old.id)] = transaction; else next.transactions.push(transaction);
-    await commit(next); $('#transaction-dialog').close(); toast(old ? '收支记录已更新' : '收支记录已保存');
-  } catch (error) { form.querySelector('.form-error').textContent = error.message; } finally { button.disabled = false; }
-});
-
-async function deleteTransaction(id) {
-  const transaction = data.transactions.find(item => item.id === id); if (!transaction) return;
-  if (!await confirmAction('删除收支记录', `删除这笔${transaction.type === 'income' ? '收入' : '支出'}记录？`, '删除记录')) return;
-  try { const next = structuredClone(data); next.transactions = next.transactions.filter(item => item.id !== id); await commit(next); toast('收支记录已删除'); } catch (error) { toast(error.message); }
 }
 
 const RATE_CURRENCIES = ['HKD', 'JPY', 'EUR'];
@@ -239,7 +190,7 @@ $('#import-file').onchange = async event => {
     if (file.size > 5_000_000) throw new Error('备份文件过大');
     const backup = JSON.parse(await file.text()); if (backup.format !== 'asset-list-v1') throw new Error('请选择资产清单导出的备份文件');
     const next = validateData(backup.data);
-    if (!await confirmAction('恢复备份', `用备份中的 ${next.accounts.length} 个账户和 ${next.transactions.length} 笔收支记录替换当前账本。当前账本将先自动导出备份。`, '备份并恢复')) return;
+    if (!await confirmAction('恢复备份', `用备份中的 ${next.accounts.length} 个账户和 ${next.history.length} 条修改历史替换当前账本。当前账本将先自动导出备份。`, '备份并恢复')) return;
     await exportBackup(); await commit(next); $('#settings-dialog').close(); toast('备份已恢复');
   } catch (error) { toast(error.message); } finally { event.target.value = ''; }
 };
@@ -248,24 +199,19 @@ document.addEventListener('click', event => {
   const button = event.target.closest('button'); if (!button) return;
   if (button.hasAttribute('data-close')) button.closest('dialog').close();
   if (button.hasAttribute('data-add')) openAccount();
-  if (button.hasAttribute('data-record')) openTransaction();
   if (button.dataset.edit) openAccount(button.dataset.edit);
   if (button.dataset.archive) void archive(button.dataset.archive);
   if (button.dataset.restore) void archive(button.dataset.restore, true);
   if (button.dataset.deleteAccount) void deleteArchived(button.dataset.deleteAccount);
-  if (button.dataset.editTransaction) openTransaction(button.dataset.editTransaction);
-  if (button.dataset.deleteTransaction) void deleteTransaction(button.dataset.deleteTransaction);
-  if (button.dataset.view) { view = button.dataset.view; category = '全部'; historyLimit = 40; transactionLimit = 40; render(); }
+  if (button.dataset.view) { view = button.dataset.view; category = '全部'; historyLimit = 40; render(); }
   if (button.dataset.category) { category = button.dataset.category; render(); }
   if (button.id === 'load-more') { historyLimit += 40; render(); }
-  if (button.id === 'load-more-transactions') { transactionLimit += 40; render(); }
 });
 
 $('#search').oninput = () => render();
 $('#sort-order').onchange = event => { sortOrder = event.target.value; render(); };
 $('#summary-month').onchange = event => { summaryMonth = event.target.value || currentMonth(); renderMonthlySummary(); };
 $('#add-button').onclick = () => openAccount();
-$('#record-button').onclick = () => openTransaction();
 $('#settings-button').onclick = () => $('#settings-dialog').showModal();
 $('#refresh-rates').onclick = refreshRates;
 $('#privacy-button').onclick = () => { hidden = !hidden; $('#privacy-button').setAttribute('aria-label', hidden ? '显示金额' : '隐藏金额'); render(); };
